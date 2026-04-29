@@ -128,3 +128,55 @@ fn ch_build_adds_shortcuts_on_dense_graph() {
     let p = ch.query(a, c).expect("ch path");
     assert!((p.cost - 2.0).abs() < 1e-3, "got cost {}", p.cost);
 }
+
+#[test]
+fn ch_v4_unpack_recovers_original_nodes() {
+    // Build the same forced-shortcut graph; verify the compressed
+    // CH path skips `mid` and the unpacked path includes it.
+    let mut b = Graph::builder();
+    let a = b.add_node(LatLon::new(0.0, 0.0));
+    let mid = b.add_node(LatLon::new(0.0, 0.001));
+    let c = b.add_node(LatLon::new(0.0, 0.002));
+    let detour = b.add_node(LatLon::new(0.001, 0.0));
+    let e1 = b.add_node(LatLon::new(0.0, -0.001));
+    let e2 = b.add_node(LatLon::new(0.0, 0.003));
+    let mk = |from, to, d| Edge {
+        from,
+        to,
+        distance_m: d,
+        road_type: RoadType::Paved,
+        elevation_gain_m: 0.0,
+        weather_id: 0,
+    };
+    b.add_bidirectional(mk(a, mid, 1.0));
+    b.add_bidirectional(mk(mid, c, 1.0));
+    b.add_bidirectional(mk(a, detour, 10.0));
+    b.add_bidirectional(mk(detour, c, 10.0));
+    b.add_bidirectional(mk(a, e1, 1.0));
+    b.add_bidirectional(mk(c, e2, 1.0));
+
+    let g = b.build();
+    let ch = CH::build(&g);
+    let compressed = ch.query(a, c).expect("ch path");
+    let unpacked = ch.unpack_path(&compressed);
+
+    // Compressed: a → c (using the shortcut, skips mid).
+    // Unpacked:   a → mid → c (mid is recovered).
+    assert!(unpacked.nodes.len() >= compressed.nodes.len());
+    assert!(unpacked.nodes.contains(&mid),
+            "expected mid in unpacked path, got {:?}", unpacked.nodes);
+    // Cost preserved.
+    assert!((unpacked.cost - compressed.cost).abs() < 1e-3);
+}
+
+#[test]
+fn ch_v4_unpack_is_idempotent_on_paths_without_shortcuts() {
+    // A grid path that doesn't traverse any shortcut should be
+    // unchanged by unpack.
+    let g = build_grid(5);
+    let ch = CH::build(&g);
+    let compressed = ch.query(0, 4).expect("ch path");
+    let unpacked = ch.unpack_path(&compressed);
+    assert_eq!(unpacked.nodes, compressed.nodes);
+    assert!((unpacked.cost - compressed.cost).abs() < 1e-3);
+}

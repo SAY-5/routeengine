@@ -271,6 +271,71 @@ impl CH {
             .map(|v| v.iter().filter(|e| e.via.is_some()).count())
             .sum()
     }
+
+    /// v4: unpack shortcut edges along the compressed CH path so the
+    /// caller sees the original sequence of nodes the route actually
+    /// traverses. CH stores each shortcut as `(u → w via v)`; we
+    /// recursively replace `u → w` with `u → v → w` and unpack each
+    /// half until every edge is an original (via == None).
+    ///
+    /// The unpacked path is what a user-facing turn-by-turn renderer
+    /// or traffic visualizer needs. The compressed path is what the
+    /// query path emits because it's faster to construct; v4 makes
+    /// the trade-off explicit at the API boundary.
+    pub fn unpack_path(&self, compressed: &Path) -> Path {
+        if compressed.nodes.len() < 2 {
+            return compressed.clone();
+        }
+        let mut out = Vec::with_capacity(compressed.nodes.len());
+        out.push(compressed.nodes[0]);
+        for w in compressed.nodes.windows(2) {
+            self.unpack_edge(w[0], w[1], &mut out);
+        }
+        Path {
+            nodes: out,
+            cost: compressed.cost,
+        }
+    }
+
+    /// Recursively walk shortcut bookkeeping. We look up the edge
+    /// `u → v` in fwd; if its `via` is set, it's a shortcut and we
+    /// recurse on each half. Otherwise it's an original edge and we
+    /// just append `v`.
+    fn unpack_edge(&self, u: NodeId, v: NodeId, out: &mut Vec<NodeId>) {
+        let edges = &self.fwd[u as usize];
+        // Pick the cheapest matching edge to `v` — there can be
+        // duplicates (original + shortcut) and we want the canonical
+        // representation (a shortcut edge points at the via node).
+        let mut best: Option<&ShortcutEdge> = None;
+        for e in edges {
+            if e.to == v {
+                match best {
+                    None => best = Some(e),
+                    Some(b) => {
+                        if e.cost < b.cost {
+                            best = Some(e);
+                        }
+                    }
+                }
+            }
+        }
+        match best {
+            None => {
+                // No direct edge — happens only for paths that go
+                // backwards through the augmented graph. The CH
+                // query never produces these; if we hit one, fall
+                // through to `v` so the path stays a valid sequence.
+                out.push(v);
+            }
+            Some(e) => match e.via {
+                None => out.push(v),
+                Some(mid) => {
+                    self.unpack_edge(u, mid, out);
+                    self.unpack_edge(mid, v, out);
+                }
+            },
+        }
+    }
 }
 
 fn witness_no_shorter(
