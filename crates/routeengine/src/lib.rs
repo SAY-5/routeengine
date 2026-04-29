@@ -11,12 +11,14 @@
 #![warn(rust_2018_idioms)]
 
 pub mod astar;
+pub mod bidir;
 pub mod constraints;
 pub mod dijkstra;
 pub mod graph;
 pub mod spatial;
 
 pub use astar::{astar, AstarStats};
+pub use bidir::{bidir_astar, reverse_adjacency, BidirStats};
 pub use constraints::{ConstraintSet, EdgeCostFn, SpatialContext};
 pub use dijkstra::dijkstra;
 pub use graph::{Edge, Graph, NodeId, RoadType};
