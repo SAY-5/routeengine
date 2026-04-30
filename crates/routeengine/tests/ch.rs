@@ -163,8 +163,11 @@ fn ch_v4_unpack_recovers_original_nodes() {
     // Compressed: a → c (using the shortcut, skips mid).
     // Unpacked:   a → mid → c (mid is recovered).
     assert!(unpacked.nodes.len() >= compressed.nodes.len());
-    assert!(unpacked.nodes.contains(&mid),
-            "expected mid in unpacked path, got {:?}", unpacked.nodes);
+    assert!(
+        unpacked.nodes.contains(&mid),
+        "expected mid in unpacked path, got {:?}",
+        unpacked.nodes
+    );
     // Cost preserved.
     assert!((unpacked.cost - compressed.cost).abs() < 1e-3);
 }
